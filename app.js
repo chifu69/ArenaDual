@@ -43,8 +43,46 @@ function drawEntity(p){ctx.save();ctx.shadowBlur=26;ctx.shadowColor=p.color;ctx.
 function draw(){drawGrid();drawEntity(player);drawEntity(enemy);for(const b of bullets){ctx.save();ctx.fillStyle=b.blue?'#78d6ff':'#ffb26f';ctx.shadowBlur=18;ctx.shadowColor=ctx.fillStyle;ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill();ctx.restore();}}
 function loop(ts){if(!running){draw();return;}const dt=Math.min(.033,(ts-last)/1000);last=ts;update(dt);draw();if(running)requestAnimationFrame(loop);}
 
-startBtn.addEventListener('click',start);document.getElementById('fireBtn').addEventListener('click',()=>fire(player,enemy,true));document.getElementById('dashBtn').addEventListener('click',dash);
-document.querySelectorAll('[data-move]').forEach(btn=>{const dir=btn.dataset.move;['pointerdown','touchstart'].forEach(ev=>btn.addEventListener(ev,e=>{e.preventDefault();pressed[dir]=true;}));['pointerup','pointercancel','pointerleave','touchend'].forEach(ev=>btn.addEventListener(ev,e=>{e.preventDefault();pressed[dir]=false;}));});
+startBtn.addEventListener('click',start);
+
+// Multi-touch controls: movement and actions can be held/pressed at the same time.
+const fireBtn=document.getElementById('fireBtn');
+const dashBtn=document.getElementById('dashBtn');
+
+function actionPointerDown(e,action){
+  e.preventDefault();
+  e.stopPropagation();
+  try{e.currentTarget.setPointerCapture(e.pointerId);}catch(_){}
+  action();
+}
+fireBtn.addEventListener('pointerdown',e=>actionPointerDown(e,()=>fire(player,enemy,true)));
+dashBtn.addEventListener('pointerdown',e=>actionPointerDown(e,dash));
+
+const movePointers=new Map();
+function refreshMovement(){
+  pressed.up=false; pressed.down=false; pressed.left=false; pressed.right=false;
+  for(const dir of movePointers.values()) pressed[dir]=true;
+}
+
+document.querySelectorAll('[data-move]').forEach(btn=>{
+  const dir=btn.dataset.move;
+  btn.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    movePointers.set(e.pointerId,dir);
+    pressed[dir]=true;
+    try{btn.setPointerCapture(e.pointerId);}catch(_){}
+  });
+  const release=e=>{
+    e.preventDefault();
+    movePointers.delete(e.pointerId);
+    refreshMovement();
+  };
+  btn.addEventListener('pointerup',release);
+  btn.addEventListener('pointercancel',release);
+  btn.addEventListener('lostpointercapture',release);
+});
+
 window.addEventListener('keydown',e=>{if(['ArrowUp','w','W'].includes(e.key))pressed.up=true;if(['ArrowDown','s','S'].includes(e.key))pressed.down=true;if(['ArrowLeft','a','A'].includes(e.key))pressed.left=true;if(['ArrowRight','d','D'].includes(e.key))pressed.right=true;if(e.key===' ')fire(player,enemy,true);if(e.key==='Shift')dash();});
 window.addEventListener('keyup',e=>{if(['ArrowUp','w','W'].includes(e.key))pressed.up=false;if(['ArrowDown','s','S'].includes(e.key))pressed.down=false;if(['ArrowLeft','a','A'].includes(e.key))pressed.left=false;if(['ArrowRight','d','D'].includes(e.key))pressed.right=false;});
 
