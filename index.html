@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+<meta name="theme-color" content="#07111f" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="stylesheet" href="styles.css" />
+<title>Arena Duel v0.1</title>
+</head>
+<body>
+<div id="app">
+  <header class="hud-top">
+    <div class="player blue"><strong>EAGLE</strong><span id="scoreBlue">0</span></div>
+    <div class="timer-wrap"><div id="timer">100</div><small id="modeLabel">FIRST TO 5</small></div>
+    <div class="player orange"><strong>SHADOW</strong><span id="scoreOrange">0</span></div>
+  </header>
+
+  <main>
+    <canvas id="game" width="900" height="1400" aria-label="Arena Duel game"></canvas>
+    <div id="message" class="message hidden"></div>
+  </main>
+
+  <section class="controls">
+    <div class="pad" id="movePad">
+      <button data-move="up">▲</button>
+      <div><button data-move="left">◀</button><button data-move="down">▼</button><button data-move="right">▶</button></div>
+    </div>
+    <div class="actions">
+      <button id="dashBtn">DASH</button>
+      <button id="fireBtn" class="fire">FIRE</button>
+    </div>
+  </section>
+
+  <footer>
+    <button id="startBtn">START DUEL</button>
+    <span>Arena Duel v0.1 • 100 Second Battle</span>
+  </footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
