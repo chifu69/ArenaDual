@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#07111f" />
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="stylesheet" href="styles.css" />
-<title>Arena Duel v0.1.1</title>
+<title>Arena Duel v0.2.0</title>
 </head>
 <body>
 <div id="app">
@@ -22,9 +22,8 @@
   </main>
 
   <section class="controls">
-    <div class="pad" id="movePad">
-      <button data-move="up">▲</button>
-      <div><button data-move="left">◀</button><button data-move="down">▼</button><button data-move="right">▶</button></div>
+    <div class="joystick" id="movePad" aria-label="Movement joystick">
+      <div class="joystick-knob" id="joystickKnob"></div>
     </div>
     <div class="actions">
       <button id="dashBtn">DASH</button>
@@ -34,7 +33,7 @@
 
   <footer>
     <button id="startBtn">START DUEL</button>
-    <span>Arena Duel v0.1.1 • 100 Second Battle</span>
+    <span>Arena Duel v0.2.0 • 100 Second Battle</span>
   </footer>
 </div>
 <script src="app.js"></script>

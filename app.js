@@ -10,6 +10,7 @@ const startBtn=document.getElementById('startBtn');
 const W=canvas.width,H=canvas.height;
 let running=false, suddenDeath=false, timeLeft=100, last=0, accumulator=0;
 let blueScore=0, orangeScore=0, pressed={};
+let joystickX=0, joystickY=0;
 let bullets=[];
 
 const player={x:W*.25,y:H*.5,r:28,speed:290,color:'#16a8ff',dashCd:0,fireCd:0};
@@ -25,11 +26,11 @@ function score(side){if(side==='blue') blueScore++; else orangeScore++; updateHu
 function start(){resetGame();running=true;hideMessage();startBtn.textContent='RESTART';last=performance.now();requestAnimationFrame(loop);}
 
 function fire(shooter,target,isBlue){if(shooter.fireCd>0)return;shooter.fireCd=.45;const dx=target.x-shooter.x,dy=target.y-shooter.y,len=Math.hypot(dx,dy)||1;bullets.push({x:shooter.x,y:shooter.y,vx:dx/len*620,vy:dy/len*620,r:9,blue:isBlue,life:2});}
-function dash(){if(player.dashCd>0)return;player.dashCd=2.6;let dx=(pressed.right?1:0)-(pressed.left?1:0),dy=(pressed.down?1:0)-(pressed.up?1:0);if(!dx&&!dy){dx=enemy.x>player.x?1:-1;}const len=Math.hypot(dx,dy)||1;player.x+=dx/len*145;player.y+=dy/len*145;clamp(player);}
+function dash(){if(player.dashCd>0)return;player.dashCd=2.6;let dx=joystickX||((pressed.right?1:0)-(pressed.left?1:0)),dy=joystickY||((pressed.down?1:0)-(pressed.up?1:0));if(!dx&&!dy){dx=enemy.x>player.x?1:-1;}const len=Math.hypot(dx,dy)||1;player.x+=dx/len*145;player.y+=dy/len*145;clamp(player);}
 function clamp(p){p.x=Math.max(p.r+24,Math.min(W-p.r-24,p.x));p.y=Math.max(p.r+24,Math.min(H-p.r-24,p.y));}
 
 function update(dt){if(!running)return;player.dashCd-=dt;player.fireCd-=dt;enemy.fireCd-=dt;
-  let dx=(pressed.right?1:0)-(pressed.left?1:0),dy=(pressed.down?1:0)-(pressed.up?1:0);if(dx||dy){const len=Math.hypot(dx,dy);player.x+=dx/len*player.speed*dt;player.y+=dy/len*player.speed*dt;clamp(player);}
+  let dx=joystickX||((pressed.right?1:0)-(pressed.left?1:0)),dy=joystickY||((pressed.down?1:0)-(pressed.up?1:0));if(dx||dy){const len=Math.hypot(dx,dy);const strength=Math.min(1,len);player.x+=dx/len*player.speed*strength*dt;player.y+=dy/len*player.speed*strength*dt;clamp(player);}
   enemy.aiPhase+=dt;const desiredY=H*.5+Math.sin(enemy.aiPhase*1.4)*H*.22;enemy.y+=Math.sign(desiredY-enemy.y)*enemy.speed*dt;const dist=player.x-enemy.x;enemy.x+=Math.sign(dist)*enemy.speed*.22*dt;clamp(enemy);if(Math.random()<dt*1.35)fire(enemy,player,false);
   bullets.forEach(b=>{b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt;});
   for(const b of bullets){const target=b.blue?enemy:player;if(Math.hypot(b.x-target.x,b.y-target.y)<b.r+target.r){b.life=0;score(b.blue?'blue':'orange');break;}}
@@ -58,30 +59,22 @@ function actionPointerDown(e,action){
 fireBtn.addEventListener('pointerdown',e=>actionPointerDown(e,()=>fire(player,enemy,true)));
 dashBtn.addEventListener('pointerdown',e=>actionPointerDown(e,dash));
 
-const movePointers=new Map();
-function refreshMovement(){
-  pressed.up=false; pressed.down=false; pressed.left=false; pressed.right=false;
-  for(const dir of movePointers.values()) pressed[dir]=true;
+const movePad=document.getElementById('movePad');
+const joystickKnob=document.getElementById('joystickKnob');
+let joystickPointer=null;
+function setJoystick(e){
+  const r=movePad.getBoundingClientRect();
+  const cx=r.left+r.width/2, cy=r.top+r.height/2;
+  let dx=e.clientX-cx, dy=e.clientY-cy;
+  const max=r.width*.32, dist=Math.hypot(dx,dy);
+  if(dist>max){dx=dx/dist*max;dy=dy/dist*max;}
+  joystickX=dx/max; joystickY=dy/max;
+  joystickKnob.style.transform=`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px))`;
 }
-
-document.querySelectorAll('[data-move]').forEach(btn=>{
-  const dir=btn.dataset.move;
-  btn.addEventListener('pointerdown',e=>{
-    e.preventDefault();
-    e.stopPropagation();
-    movePointers.set(e.pointerId,dir);
-    pressed[dir]=true;
-    try{btn.setPointerCapture(e.pointerId);}catch(_){}
-  });
-  const release=e=>{
-    e.preventDefault();
-    movePointers.delete(e.pointerId);
-    refreshMovement();
-  };
-  btn.addEventListener('pointerup',release);
-  btn.addEventListener('pointercancel',release);
-  btn.addEventListener('lostpointercapture',release);
-});
+function resetJoystick(){joystickPointer=null;joystickX=0;joystickY=0;joystickKnob.style.transform='translate(-50%,-50%)';}
+movePad.addEventListener('pointerdown',e=>{e.preventDefault();joystickPointer=e.pointerId;try{movePad.setPointerCapture(e.pointerId)}catch(_){}setJoystick(e);});
+movePad.addEventListener('pointermove',e=>{if(e.pointerId===joystickPointer){e.preventDefault();setJoystick(e);}});
+['pointerup','pointercancel','lostpointercapture'].forEach(type=>movePad.addEventListener(type,e=>{if(e.pointerId===joystickPointer)resetJoystick();}));
 
 window.addEventListener('keydown',e=>{if(['ArrowUp','w','W'].includes(e.key))pressed.up=true;if(['ArrowDown','s','S'].includes(e.key))pressed.down=true;if(['ArrowLeft','a','A'].includes(e.key))pressed.left=true;if(['ArrowRight','d','D'].includes(e.key))pressed.right=true;if(e.key===' ')fire(player,enemy,true);if(e.key==='Shift')dash();});
 window.addEventListener('keyup',e=>{if(['ArrowUp','w','W'].includes(e.key))pressed.up=false;if(['ArrowDown','s','S'].includes(e.key))pressed.down=false;if(['ArrowLeft','a','A'].includes(e.key))pressed.left=false;if(['ArrowRight','d','D'].includes(e.key))pressed.right=false;});
