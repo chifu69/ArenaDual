@@ -25,7 +25,7 @@ updateSoundButton();
 
 
 const W=canvas.width,H=canvas.height;
-const WIN_SCORE=10;
+const WIN_SCORE=20;
 let running=false, suddenDeath=false, timeLeft=100, last=0, rafId=0;
 let blueScore=0, orangeScore=0, pressed={};
 let joystickX=0, joystickY=0;
@@ -39,6 +39,22 @@ const difficultyProfiles={
   medium:{enemySpeed:215,fireRate:1.18,aimError:.10,strafe:.22,bulletSpeed:575,label:'MEDIUM'},
   hard:{enemySpeed:255,fireRate:1.62,aimError:.045,strafe:.31,bulletSpeed:630,label:'HARD'}
 };
+
+// Real level progression: every level materially improves Shadow's AI.
+// Difficulty sets the baseline; level adds speed, reaction, accuracy and prediction.
+function levelTuning(){
+  const step=Math.max(0,level-1);
+  return {
+    speedMult:1+Math.min(.55,step*.035),
+    fireMult:1+Math.min(1.00,step*.065),
+    bulletMult:1+Math.min(.38,step*.025),
+    aimMult:Math.max(.30,1-Math.min(.70,step*.055)),
+    strafeMult:1+Math.min(.65,step*.04),
+    lead:Math.min(.46,step*.025),
+    aggression:Math.min(.34,step*.018),
+    burstChance:Math.min(.34,Math.max(0,step-3)*.025)
+  };
+}
 
 const player={x:W*.25,y:H*.5,r:31,speed:290,color:'#16a8ff',dashCd:0,fireCd:0,facing:0,hitFlash:0};
 const enemy={x:W*.75,y:H*.5,r:31,speed:215,color:'#ff7a18',fireCd:0,aiPhase:0,facing:Math.PI,hitFlash:0};
@@ -69,7 +85,7 @@ function resetPositions(){
 function resetRoundState(){player.dashCd=0;player.fireCd=0;enemy.fireCd=.5;player.hitFlash=0;enemy.hitFlash=0;}
 function resetGame(){
   blueScore=0;orangeScore=0;timeLeft=100;suddenDeath=false;playerStreak=0;
-  modeLabel.textContent='FIRST TO 10';
+  modeLabel.textContent='FIRST TO 20';
   resetPositions();resetRoundState();updateHud();updateMetaHud();
 }
 function updateHud(){
@@ -153,10 +169,26 @@ function firePlayer(){
 function fireEnemy(){
   if(!running||enemy.fireCd>0)return;
   const p=difficultyProfiles[difficulty];
-  enemy.fireCd=Math.max(.32,1/p.fireRate);
-  const levelBoost=Math.min(.35,(level-1)*.018);
-  const err=(Math.random()*2-1)*Math.max(.015,p.aimError-levelBoost*.08);
-  spawnShot(enemy,player,false,err,p.bulletSpeed*(1+levelBoost*.25));
+  const t=levelTuning();
+  enemy.fireCd=Math.max(.20,1/(p.fireRate*t.fireMult));
+
+  // Predict where the player is going instead of always aiming at the current position.
+  const moveX=joystickX||((pressed.right?1:0)-(pressed.left?1:0));
+  const moveY=joystickY||((pressed.down?1:0)-(pressed.up?1:0));
+  const leadStrength=t.lead*(difficulty==='hard'?1.15:difficulty==='easy'?.78:1);
+  const predicted={
+    x:player.x+moveX*player.speed*leadStrength,
+    y:player.y+moveY*player.speed*leadStrength
+  };
+  const err=(Math.random()*2-1)*Math.max(.008,p.aimError*t.aimMult);
+  const shotSpeed=p.bulletSpeed*t.bulletMult;
+  spawnShot(enemy,predicted,false,err,shotSpeed);
+
+  // From level 5 onward Shadow can occasionally fire a tight second flame.
+  if(level>=5 && Math.random()<t.burstChance){
+    const offset=(Math.random()<.5?-1:1)*(difficulty==='hard'?.035:.05);
+    spawnShot(enemy,predicted,false,err+offset,shotSpeed*.98);
+  }
   sfx.enemyFire();
 }
 function dash(){
@@ -177,22 +209,25 @@ function update(dt){
   if(dx||dy){const len=Math.hypot(dx,dy);const strength=Math.min(1,len);player.x+=dx/len*player.speed*strength*dt;player.y+=dy/len*player.speed*strength*dt;clamp(player);}
 
   const p=difficultyProfiles[difficulty];
-  const levelBoost=Math.min(.38,(level-1)*.022);
-  enemy.speed=p.enemySpeed*(1+levelBoost);
-  enemy.aiPhase+=dt;
+  const t=levelTuning();
+  enemy.speed=p.enemySpeed*t.speedMult;
+  enemy.aiPhase+=dt*(1+Math.min(.7,(level-1)*.025));
   const toPlayerX=player.x-enemy.x,toPlayerY=player.y-enemy.y,dist=Math.hypot(toPlayerX,toPlayerY)||1;
-  const desiredRange=difficulty==='hard'?330:difficulty==='medium'?380:430;
-  const forward=(dist>desiredRange?1:-.55);
+  // Higher levels close the distance more aggressively and strafe more strongly.
+  const baseRange=difficulty==='hard'?330:difficulty==='medium'?380:430;
+  const desiredRange=Math.max(245,baseRange-(level-1)*5);
+  const forward=(dist>desiredRange?1+t.aggression:-.55-t.aggression*.35);
   const nx=toPlayerX/dist,ny=toPlayerY/dist;
-  const sx=-ny*Math.sin(enemy.aiPhase*1.55),sy=nx*Math.sin(enemy.aiPhase*1.55);
-  enemy.x+=(nx*forward+sx*p.strafe)*enemy.speed*dt;
-  enemy.y+=(ny*forward+sy*p.strafe)*enemy.speed*dt;
+  const weave=Math.sin(enemy.aiPhase*1.55)+Math.sin(enemy.aiPhase*.73)*.35;
+  const sx=-ny*weave,sy=nx*weave;
+  enemy.x+=(nx*forward+sx*p.strafe*t.strafeMult)*enemy.speed*dt;
+  enemy.y+=(ny*forward+sy*p.strafe*t.strafeMult)*enemy.speed*dt;
   clamp(enemy);
   // Dragons always visually track each other instead of rotating with movement.
   // This keeps the body orientation stable and makes fire leave the mouth naturally.
   player.facing=Math.atan2(enemy.y-player.y,enemy.x-player.x);
   enemy.facing=Math.atan2(player.y-enemy.y,player.x-enemy.x);
-  if(Math.random()<dt*p.fireRate*(1+levelBoost*.7))fireEnemy();
+  if(Math.random()<dt*p.fireRate*t.fireMult)fireEnemy();
 
   bullets.forEach(b=>{b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt;});
   for(const b of bullets){
@@ -304,4 +339,4 @@ window.addEventListener('keyup',e=>{if(['ArrowUp','w','W'].includes(e.key))press
 document.addEventListener('touchmove',e=>{if(e.target.closest && e.target.closest('#movePad,.actions,#startBtn'))e.preventDefault();},{passive:false});
 
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
-resetGame();draw();showMessage('ARENA DUEL','CHOOSE DIFFICULTY • FIRST TO 10');
+resetGame();draw();showMessage('ARENA DUEL','CHOOSE DIFFICULTY • FIRST TO 20');
