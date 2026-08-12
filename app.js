@@ -60,8 +60,10 @@ function updateMetaHud(){
 }
 
 function resetPositions(){
-  player.x=W*.23;player.y=H*.50;player.facing=0;
-  enemy.x=W*.77;enemy.y=H*.50;enemy.facing=Math.PI;
+  player.x=W*.23;player.y=H*.50;
+  enemy.x=W*.77;enemy.y=H*.50;
+  player.facing=Math.atan2(enemy.y-player.y,enemy.x-player.x);
+  enemy.facing=Math.atan2(player.y-enemy.y,player.x-enemy.x);
   bullets=[];
 }
 function resetRoundState(){player.dashCd=0;player.fireCd=0;enemy.fireCd=.5;player.hitFlash=0;enemy.hitFlash=0;}
@@ -138,7 +140,7 @@ function spawnShot(shooter,target,isBlue,angleOffset=0,speedOverride=null){
   const speed=speedOverride||(isBlue?650:difficultyProfiles[difficulty].bulletSpeed);
   const muzzle=36;
   bullets.push({x:shooter.x+Math.cos(base)*muzzle,y:shooter.y+Math.sin(base)*muzzle,vx:Math.cos(base)*speed,vy:Math.sin(base)*speed,r:8,blue:isBlue,life:2,angle:base});
-  shooter.facing=base;
+  // Visual facing is handled continuously in update() so movement never twists the dragon.
 }
 function firePlayer(){
   if(!running||player.fireCd>0)return;
@@ -172,7 +174,7 @@ function update(dt){
   player.dashCd=Math.max(0,player.dashCd-dt);player.fireCd=Math.max(0,player.fireCd-dt);enemy.fireCd=Math.max(0,enemy.fireCd-dt);
   player.hitFlash=Math.max(0,player.hitFlash-dt);enemy.hitFlash=Math.max(0,enemy.hitFlash-dt);
   let dx=joystickX||((pressed.right?1:0)-(pressed.left?1:0)),dy=joystickY||((pressed.down?1:0)-(pressed.up?1:0));
-  if(dx||dy){const len=Math.hypot(dx,dy);const strength=Math.min(1,len);player.x+=dx/len*player.speed*strength*dt;player.y+=dy/len*player.speed*strength*dt;player.facing=Math.atan2(dy,dx);clamp(player);}
+  if(dx||dy){const len=Math.hypot(dx,dy);const strength=Math.min(1,len);player.x+=dx/len*player.speed*strength*dt;player.y+=dy/len*player.speed*strength*dt;clamp(player);}
 
   const p=difficultyProfiles[difficulty];
   const levelBoost=Math.min(.38,(level-1)*.022);
@@ -185,7 +187,11 @@ function update(dt){
   const sx=-ny*Math.sin(enemy.aiPhase*1.55),sy=nx*Math.sin(enemy.aiPhase*1.55);
   enemy.x+=(nx*forward+sx*p.strafe)*enemy.speed*dt;
   enemy.y+=(ny*forward+sy*p.strafe)*enemy.speed*dt;
-  enemy.facing=Math.atan2(toPlayerY,toPlayerX);clamp(enemy);
+  clamp(enemy);
+  // Dragons always visually track each other instead of rotating with movement.
+  // This keeps the body orientation stable and makes fire leave the mouth naturally.
+  player.facing=Math.atan2(enemy.y-player.y,enemy.x-player.x);
+  enemy.facing=Math.atan2(player.y-enemy.y,player.x-enemy.x);
   if(Math.random()<dt*p.fireRate*(1+levelBoost*.7))fireEnemy();
 
   bullets.forEach(b=>{b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt;});
@@ -259,9 +265,16 @@ function loop(ts){
   if(running)rafId=requestAnimationFrame(loop);else rafId=0;
 }
 
-function startFromButton(e){if(e){e.preventDefault();e.stopPropagation();} if(running){running=false;if(rafId)cancelAnimationFrame(rafId);rafId=0;} start();}
-startBtn.addEventListener('click',startFromButton);
-startBtn.addEventListener('pointerup',e=>{if(e.pointerType!=='mouse')startFromButton(e)});
+function startFromButton(e){
+  if(e){e.preventDefault();e.stopPropagation();}
+  if(running){running=false;if(rafId)cancelAnimationFrame(rafId);rafId=0;}
+  resetJoystick();
+  start();
+}
+// One touch/click path only. Prevents iOS long-press/text-selection from swallowing PLAY AGAIN.
+startBtn.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();try{startBtn.setPointerCapture(e.pointerId)}catch(_){}});
+startBtn.addEventListener('pointerup',startFromButton);
+startBtn.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){startFromButton(e);}});
 
 document.querySelectorAll('.difficulty-btn').forEach(btn=>btn.addEventListener('click',()=>{
   if(running)return;
@@ -285,6 +298,10 @@ movePad.addEventListener('pointermove',e=>{if(e.pointerId===joystickPointer){e.p
 
 window.addEventListener('keydown',e=>{if(['ArrowUp','w','W'].includes(e.key))pressed.up=true;if(['ArrowDown','s','S'].includes(e.key))pressed.down=true;if(['ArrowLeft','a','A'].includes(e.key))pressed.left=true;if(['ArrowRight','d','D'].includes(e.key))pressed.right=true;if(e.key===' ')firePlayer();if(e.key==='Shift')dash();});
 window.addEventListener('keyup',e=>{if(['ArrowUp','w','W'].includes(e.key))pressed.up=false;if(['ArrowDown','s','S'].includes(e.key))pressed.down=false;if(['ArrowLeft','a','A'].includes(e.key))pressed.left=false;if(['ArrowRight','d','D'].includes(e.key))pressed.right=false;});
+
+// Game UI should behave like a native control surface, not selectable webpage text.
+['selectstart','contextmenu','dragstart'].forEach(type=>document.addEventListener(type,e=>e.preventDefault(),{passive:false}));
+document.addEventListener('touchmove',e=>{if(e.target.closest && e.target.closest('#movePad,.actions,#startBtn'))e.preventDefault();},{passive:false});
 
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
 resetGame();draw();showMessage('ARENA DUEL','CHOOSE DIFFICULTY • FIRST TO 10');
