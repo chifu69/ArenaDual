@@ -35,24 +35,26 @@ let difficulty=localStorage.getItem('arenaDifficulty')||'medium';
 let level=Math.max(1,parseInt(localStorage.getItem('arenaLevel')||'1',10)||1);
 
 const difficultyProfiles={
-  easy:{enemySpeed:175,fireRate:.78,aimError:.18,strafe:.16,bulletSpeed:520,label:'EASY'},
-  medium:{enemySpeed:215,fireRate:1.18,aimError:.10,strafe:.22,bulletSpeed:575,label:'MEDIUM'},
-  hard:{enemySpeed:255,fireRate:1.62,aimError:.045,strafe:.31,bulletSpeed:630,label:'HARD'}
+  easy:{enemySpeed:205,fireRate:.82,aimError:.18,strafe:.24,bulletSpeed:530,dodge:.48,label:'EASY'},
+  medium:{enemySpeed:250,fireRate:1.22,aimError:.10,strafe:.34,bulletSpeed:590,dodge:.68,label:'MEDIUM'},
+  hard:{enemySpeed:300,fireRate:1.70,aimError:.045,strafe:.46,bulletSpeed:650,dodge:.88,label:'HARD'}
 };
 
-// Real level progression: every level materially improves Shadow's AI.
+// Real level progression: every level materially improves Albert's AI.
 // Difficulty sets the baseline; level adds speed, reaction, accuracy and prediction.
 function levelTuning(){
   const step=Math.max(0,level-1);
   return {
-    speedMult:1+Math.min(.55,step*.035),
+    speedMult:1+Math.min(.72,step*.045),
     fireMult:1+Math.min(1.00,step*.065),
     bulletMult:1+Math.min(.38,step*.025),
     aimMult:Math.max(.30,1-Math.min(.70,step*.055)),
-    strafeMult:1+Math.min(.65,step*.04),
+    strafeMult:1+Math.min(.95,step*.055),
     lead:Math.min(.46,step*.025),
     aggression:Math.min(.34,step*.018),
-    burstChance:Math.min(.34,Math.max(0,step-3)*.025)
+    burstChance:Math.min(.40,Math.max(0,step-3)*.03),
+    dodgeMult:1+Math.min(.75,step*.05),
+    dodgeLookAhead:Math.min(1.05,.42+step*.035)
   };
 }
 
@@ -127,7 +129,7 @@ function score(side){
   }
   updateHud();updateMetaHud();
   if(blueScore>=WIN_SCORE||orangeScore>=WIN_SCORE){
-    endGame((blueScore>orangeScore?'EAGLE':'SHADOW')+' WINS');return;
+    endGame((blueScore>orangeScore?'EAGLE':'ALBERT')+' WINS');return;
   }
   resetPositions();resetRoundState();
 }
@@ -184,7 +186,7 @@ function fireEnemy(){
   const shotSpeed=p.bulletSpeed*t.bulletMult;
   spawnShot(enemy,predicted,false,err,shotSpeed);
 
-  // From level 5 onward Shadow can occasionally fire a tight second flame.
+  // From level 5 onward Albert can occasionally fire a tight second flame.
   if(level>=5 && Math.random()<t.burstChance){
     const offset=(Math.random()<.5?-1:1)*(difficulty==='hard'?.035:.05);
     spawnShot(enemy,predicted,false,err+offset,shotSpeed*.98);
@@ -218,10 +220,38 @@ function update(dt){
   const desiredRange=Math.max(245,baseRange-(level-1)*5);
   const forward=(dist>desiredRange?1+t.aggression:-.55-t.aggression*.35);
   const nx=toPlayerX/dist,ny=toPlayerY/dist;
-  const weave=Math.sin(enemy.aiPhase*1.55)+Math.sin(enemy.aiPhase*.73)*.35;
+  const weave=Math.sin(enemy.aiPhase*1.85)+Math.sin(enemy.aiPhase*.91)*.45;
   const sx=-ny*weave,sy=nx*weave;
-  enemy.x+=(nx*forward+sx*p.strafe*t.strafeMult)*enemy.speed*dt;
-  enemy.y+=(ny*forward+sy*p.strafe*t.strafeMult)*enemy.speed*dt;
+
+  // Albert scans Eagle fire and actively dodges shots that are on a collision course.
+  let dodgeX=0,dodgeY=0,danger=0;
+  for(const b of bullets){
+    if(!b.blue)continue;
+    const rx=enemy.x-b.x, ry=enemy.y-b.y;
+    const vv=b.vx*b.vx+b.vy*b.vy||1;
+    const time=(rx*b.vx+ry*b.vy)/vv;
+    if(time<=0||time>t.dodgeLookAhead)continue;
+    const closestX=b.x+b.vx*time, closestY=b.y+b.vy*time;
+    const missX=enemy.x-closestX, missY=enemy.y-closestY;
+    const miss=Math.hypot(missX,missY);
+    const dangerRadius=enemy.r+34+(level-1)*1.2;
+    if(miss<dangerRadius){
+      const side=Math.sign((enemy.x-b.x)*b.vy-(enemy.y-b.y)*b.vx)||1;
+      const blen=Math.hypot(b.vx,b.vy)||1;
+      const perpX=-b.vy/blen*side, perpY=b.vx/blen*side;
+      const urgency=(1-miss/dangerRadius)*(1-time/t.dodgeLookAhead);
+      dodgeX+=perpX*urgency; dodgeY+=perpY*urgency; danger+=urgency;
+    }
+  }
+  if(danger>0){
+    const dlen=Math.hypot(dodgeX,dodgeY)||1;
+    dodgeX=dodgeX/dlen*p.dodge*t.dodgeMult*2.15;
+    dodgeY=dodgeY/dlen*p.dodge*t.dodgeMult*2.15;
+  }
+
+  const moveBoost=danger>0?1.18:1;
+  enemy.x+=(nx*forward+sx*p.strafe*t.strafeMult+dodgeX)*enemy.speed*moveBoost*dt;
+  enemy.y+=(ny*forward+sy*p.strafe*t.strafeMult+dodgeY)*enemy.speed*moveBoost*dt;
   clamp(enemy);
   // Dragons always visually track each other instead of rotating with movement.
   // This keeps the body orientation stable and makes fire leave the mouth naturally.
@@ -242,7 +272,7 @@ function update(dt){
     if(timeLeft<=0){
       timeLeft=0;updateHud();
       if(blueScore===orangeScore){suddenDeath=true;modeLabel.textContent='SUDDEN DEATH';showMessage('SUDDEN DEATH','NEXT HIT WINS');setTimeout(()=>{if(running)hideMessage()},900);}
-      else endGame((blueScore>orangeScore?'EAGLE':'SHADOW')+' WINS');
+      else endGame((blueScore>orangeScore?'EAGLE':'ALBERT')+' WINS');
     }
   }
   updateHud();
