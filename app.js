@@ -35,9 +35,9 @@ let difficulty=localStorage.getItem('arenaDifficulty')||'medium';
 let level=Math.max(1,parseInt(localStorage.getItem('arenaLevel')||'1',10)||1);
 
 const difficultyProfiles={
-  easy:{enemySpeed:205,fireRate:.82,aimError:.18,strafe:.24,bulletSpeed:530,dodge:.48,label:'EASY'},
-  medium:{enemySpeed:250,fireRate:1.22,aimError:.10,strafe:.34,bulletSpeed:590,dodge:.68,label:'MEDIUM'},
-  hard:{enemySpeed:300,fireRate:1.70,aimError:.045,strafe:.46,bulletSpeed:650,dodge:.88,label:'HARD'}
+  easy:{enemySpeed:245,fireRate:1.35,aimError:.14,strafe:.34,bulletSpeed:565,dodge:.68,label:'EASY'},
+  medium:{enemySpeed:305,fireRate:1.95,aimError:.075,strafe:.48,bulletSpeed:635,dodge:.92,label:'MEDIUM'},
+  hard:{enemySpeed:365,fireRate:2.65,aimError:.028,strafe:.62,bulletSpeed:710,dodge:1.18,label:'HARD'}
 };
 
 // Real level progression: every level materially improves Albert's AI.
@@ -45,21 +45,21 @@ const difficultyProfiles={
 function levelTuning(){
   const step=Math.max(0,level-1);
   return {
-    speedMult:1+Math.min(.72,step*.045),
-    fireMult:1+Math.min(1.00,step*.065),
+    speedMult:1+Math.min(.90,step*.055),
+    fireMult:1+Math.min(1.35,step*.080),
     bulletMult:1+Math.min(.38,step*.025),
     aimMult:Math.max(.30,1-Math.min(.70,step*.055)),
-    strafeMult:1+Math.min(.95,step*.055),
+    strafeMult:1+Math.min(1.20,step*.070),
     lead:Math.min(.46,step*.025),
     aggression:Math.min(.34,step*.018),
-    burstChance:Math.min(.40,Math.max(0,step-3)*.03),
-    dodgeMult:1+Math.min(.75,step*.05),
-    dodgeLookAhead:Math.min(1.05,.42+step*.035)
+    burstChance:Math.min(.62,Math.max(0,step-2)*.045),
+    dodgeMult:1+Math.min(1.10,step*.065),
+    dodgeLookAhead:Math.min(1.35,.58+step*.045)
   };
 }
 
 const player={x:W*.25,y:H*.5,r:31,speed:290,color:'#16a8ff',dashCd:0,fireCd:0,facing:0,hitFlash:0};
-const enemy={x:W*.75,y:H*.5,r:31,speed:215,color:'#ff7a18',fireCd:0,aiPhase:0,facing:Math.PI,hitFlash:0};
+const enemy={x:W*.75,y:H*.5,r:31,speed:215,color:'#ff7a18',fireCd:0,aiPhase:0,facing:Math.PI,hitFlash:0,evasionCd:0};
 
 function weaponCount(){
   if(playerStreak>=6)return 5;
@@ -84,7 +84,7 @@ function resetPositions(){
   enemy.facing=Math.atan2(player.y-enemy.y,player.x-enemy.x);
   bullets=[];
 }
-function resetRoundState(){player.dashCd=0;player.fireCd=0;enemy.fireCd=.5;player.hitFlash=0;enemy.hitFlash=0;}
+function resetRoundState(){player.dashCd=0;player.fireCd=0;enemy.fireCd=.22;enemy.evasionCd=0;player.hitFlash=0;enemy.hitFlash=0;}
 function resetGame(){
   blueScore=0;orangeScore=0;timeLeft=100;suddenDeath=false;playerStreak=0;
   modeLabel.textContent='FIRST TO 20';
@@ -129,7 +129,7 @@ function score(side){
   }
   updateHud();updateMetaHud();
   if(blueScore>=WIN_SCORE||orangeScore>=WIN_SCORE){
-    endGame((blueScore>orangeScore?'EAGLE':'ALBERT')+' WINS');return;
+    endGame((blueScore>orangeScore?'ERIC':'ALBERT')+' WINS');return;
   }
   resetPositions();resetRoundState();
 }
@@ -172,7 +172,7 @@ function fireEnemy(){
   if(!running||enemy.fireCd>0)return;
   const p=difficultyProfiles[difficulty];
   const t=levelTuning();
-  enemy.fireCd=Math.max(.20,1/(p.fireRate*t.fireMult));
+  enemy.fireCd=Math.max(.11,1/(p.fireRate*t.fireMult));
 
   // Predict where the player is going instead of always aiming at the current position.
   const moveX=joystickX||((pressed.right?1:0)-(pressed.left?1:0));
@@ -206,7 +206,7 @@ function clamp(p){p.x=Math.max(p.r+24,Math.min(W-p.r-24,p.x));p.y=Math.max(p.r+2
 function update(dt){
   if(!running)return;
   player.dashCd=Math.max(0,player.dashCd-dt);player.fireCd=Math.max(0,player.fireCd-dt);enemy.fireCd=Math.max(0,enemy.fireCd-dt);
-  player.hitFlash=Math.max(0,player.hitFlash-dt);enemy.hitFlash=Math.max(0,enemy.hitFlash-dt);
+  player.hitFlash=Math.max(0,player.hitFlash-dt);enemy.hitFlash=Math.max(0,enemy.hitFlash-dt);enemy.evasionCd=Math.max(0,enemy.evasionCd-dt);
   let dx=joystickX||((pressed.right?1:0)-(pressed.left?1:0)),dy=joystickY||((pressed.down?1:0)-(pressed.up?1:0));
   if(dx||dy){const len=Math.hypot(dx,dy);const strength=Math.min(1,len);player.x+=dx/len*player.speed*strength*dt;player.y+=dy/len*player.speed*strength*dt;clamp(player);}
 
@@ -217,13 +217,13 @@ function update(dt){
   const toPlayerX=player.x-enemy.x,toPlayerY=player.y-enemy.y,dist=Math.hypot(toPlayerX,toPlayerY)||1;
   // Higher levels close the distance more aggressively and strafe more strongly.
   const baseRange=difficulty==='hard'?330:difficulty==='medium'?380:430;
-  const desiredRange=Math.max(245,baseRange-(level-1)*5);
+  const desiredRange=Math.max(210,baseRange-(level-1)*7);
   const forward=(dist>desiredRange?1+t.aggression:-.55-t.aggression*.35);
   const nx=toPlayerX/dist,ny=toPlayerY/dist;
   const weave=Math.sin(enemy.aiPhase*1.85)+Math.sin(enemy.aiPhase*.91)*.45;
   const sx=-ny*weave,sy=nx*weave;
 
-  // Albert scans Eagle fire and actively dodges shots that are on a collision course.
+  // Albert scans Eric fire and actively dodges shots that are on a collision course.
   let dodgeX=0,dodgeY=0,danger=0;
   for(const b of bullets){
     if(!b.blue)continue;
@@ -234,7 +234,7 @@ function update(dt){
     const closestX=b.x+b.vx*time, closestY=b.y+b.vy*time;
     const missX=enemy.x-closestX, missY=enemy.y-closestY;
     const miss=Math.hypot(missX,missY);
-    const dangerRadius=enemy.r+34+(level-1)*1.2;
+    const dangerRadius=enemy.r+52+(level-1)*1.8;
     if(miss<dangerRadius){
       const side=Math.sign((enemy.x-b.x)*b.vy-(enemy.y-b.y)*b.vx)||1;
       const blen=Math.hypot(b.vx,b.vy)||1;
@@ -245,11 +245,21 @@ function update(dt){
   }
   if(danger>0){
     const dlen=Math.hypot(dodgeX,dodgeY)||1;
-    dodgeX=dodgeX/dlen*p.dodge*t.dodgeMult*2.15;
-    dodgeY=dodgeY/dlen*p.dodge*t.dodgeMult*2.15;
+    dodgeX=dodgeX/dlen*p.dodge*t.dodgeMult*2.85;
+    dodgeY=dodgeY/dlen*p.dodge*t.dodgeMult*2.85;
+
+    // Albert can make a short evasive burst when a shot is about to connect.
+    // Higher levels recover this move faster, making him substantially harder to hit.
+    if(enemy.evasionCd<=0 && danger>.12){
+      const burst=48+Math.min(78,(level-1)*4);
+      enemy.x+=dodgeX/dlen*burst;
+      enemy.y+=dodgeY/dlen*burst;
+      clamp(enemy);
+      enemy.evasionCd=Math.max(.28,.72-Math.min(.38,(level-1)*.025));
+    }
   }
 
-  const moveBoost=danger>0?1.18:1;
+  const moveBoost=danger>0?1.42:1.08;
   enemy.x+=(nx*forward+sx*p.strafe*t.strafeMult+dodgeX)*enemy.speed*moveBoost*dt;
   enemy.y+=(ny*forward+sy*p.strafe*t.strafeMult+dodgeY)*enemy.speed*moveBoost*dt;
   clamp(enemy);
@@ -257,7 +267,7 @@ function update(dt){
   // This keeps the body orientation stable and makes fire leave the mouth naturally.
   player.facing=Math.atan2(enemy.y-player.y,enemy.x-player.x);
   enemy.facing=Math.atan2(player.y-enemy.y,player.x-enemy.x);
-  if(Math.random()<dt*p.fireRate*t.fireMult)fireEnemy();
+  if(enemy.fireCd<=0)fireEnemy();
 
   bullets.forEach(b=>{b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt;});
   for(const b of bullets){
@@ -272,7 +282,7 @@ function update(dt){
     if(timeLeft<=0){
       timeLeft=0;updateHud();
       if(blueScore===orangeScore){suddenDeath=true;modeLabel.textContent='SUDDEN DEATH';showMessage('SUDDEN DEATH','NEXT HIT WINS');setTimeout(()=>{if(running)hideMessage()},900);}
-      else endGame((blueScore>orangeScore?'EAGLE':'ALBERT')+' WINS');
+      else endGame((blueScore>orangeScore?'ERIC':'ALBERT')+' WINS');
     }
   }
   updateHud();
